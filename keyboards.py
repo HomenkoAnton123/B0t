@@ -17,18 +17,11 @@ def owner_keyboard(user_id):
     ]])
 
 
-def order_keyboard(user_id, item_id, details_shown=True):
-    toggle_text = "🙈 Скрыть реквизиты" if details_shown else "👁 Показать реквизиты"
-    next_status = 0 if details_shown else 1
-    
+def order_keyboard(user_id, item_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="Принять",  callback_data=f"order_accept_{user_id}_{item_id}"),
             InlineKeyboardButton(text="Отменить", callback_data=f"order_decline_{user_id}_{item_id}"),
-        ],
-        [
-            # Кнопка переключения статуса карточки
-            InlineKeyboardButton(text=toggle_text, callback_data=f"order_toggle_{user_id}_{item_id}_{next_status}")
         ],
         [InlineKeyboardButton(text="Ответить", callback_data=f"reply_{user_id}")],
     ])
@@ -50,8 +43,21 @@ def shop_item_keyboard(item_id, lang):
     ])
 
 
-def owner_shop_keyboard():
+def owner_shop_keyboard(shop_visible: bool = False):
+    status = "Скрыть магазин" if shop_visible else "Показать магазин"
+    toggle_cb = "shop_hide" if shop_visible else "shop_show"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Добавить товар",  callback_data="shop_add")],
-        [InlineKeyboardButton(text="Список товаров",  callback_data="shop_list_owner")],
+        [InlineKeyboardButton(text="Добавить товар", callback_data="shop_add")],
+        [InlineKeyboardButton(text="Список товаров", callback_data="shop_list_owner")],
+        [InlineKeyboardButton(text=status,           callback_data=toggle_cb)],
+    ])
+
+
+def payment_manage_keyboard(user_id, item_id, payment_visible=True):
+    """Кнопки управления после принятия заказа."""
+    toggle_text = "Скрыть реквизиты" if payment_visible else "Показать реквизиты"
+    toggle_cb   = f"revoke_pay_{user_id}_{item_id}" if payment_visible else f"show_pay_{user_id}_{item_id}"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=toggle_text, callback_data=toggle_cb)],
+        [InlineKeyboardButton(text="Удалить заказ", callback_data=f"delete_order_{user_id}_{item_id}")],
     ])

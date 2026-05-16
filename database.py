@@ -54,13 +54,67 @@ def init_db():
         )
     """)
     c.execute("""
-        CREATE TABLE IF NOT EXISTS active_orders (
-            user_id INTEGER,
-            item_id INTEGER,
-            user_msg_id INTEGER,
-            PRIMARY KEY (user_id, item_id)
+        CREATE TABLE IF NOT EXISTS shop_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         )
     """)
+    # По умолчанию магазин скрыт
+    c.execute("INSERT OR IGNORE INTO shop_settings (key, value) VALUES ('visible', '0')")
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS bot_messages (
+            user_id INTEGER NOT NULL,
+            message_id INTEGER NOT NULL
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS payment_messages (
+            user_id INTEGER PRIMARY KEY,
+            message_id INTEGER NOT NULL,
+            title TEXT,
+            lang TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+# ── Магазин — видимость ────────────────────────────────
+
+def is_shop_visible():
+    conn = get_db()
+    row = conn.execute("SELECT value FROM shop_settings WHERE key='visible'").fetchone()
+    conn.close()
+    return row[0] == '1' if row else False
+
+
+def set_shop_visible(visible: bool):
+    conn = get_db()
+    conn.execute(
+        "INSERT OR REPLACE INTO shop_settings (key, value) VALUES ('visible', ?)",
+        ('1' if visible else '0',)
+    )
+    conn.commit()
+    conn.close()
+
+
+# ── Сообщения бота юзеру (для удаления при смене языка) ──
+
+def save_bot_message(user_id, message_id):
+    conn = get_db()
+    conn.execute("INSERT INTO bot_messages (user_id, message_id) VALUES (?, ?)", (user_id, message_id))
+    conn.commit()
+    conn.close()
+
+def get_bot_messages(user_id):
+    conn = get_db()
+    rows = conn.execute("SELECT message_id FROM bot_messages WHERE user_id=?", (user_id,)).fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+def clear_bot_messages(user_id):
+    conn = get_db()
+    conn.execute("DELETE FROM bot_messages WHERE user_id=?", (user_id,))
     conn.commit()
     conn.close()
 
@@ -225,23 +279,28 @@ def delete_shop_item(item_id):
     conn.commit()
     conn.close()
 
-def save_active_order(user_id, item_id, user_msg_id):
+
+# ── Сообщения с реквизитами ────────────────────────────
+
+def save_payment_msg(user_id, message_id, title, lang):
     conn = get_db()
     conn.execute(
-        "INSERT OR REPLACE INTO active_orders (user_id, item_id, user_msg_id) VALUES (?, ?, ?)",
-        (user_id, item_id, user_msg_id)
+        "INSERT OR REPLACE INTO payment_messages (user_id, message_id, title, lang) VALUES (?, ?, ?, ?)",
+        (user_id, message_id, title, lang)
     )
     conn.commit()
     conn.close()
 
-def get_active_order_msg(user_id, item_id):
+def get_payment_msg(user_id):
     conn = get_db()
-    row = conn.execute("SELECT user_msg_id FROM active_orders WHERE user_id=? AND item_id=?", (user_id, item_id)).fetchone()
+    row = conn.execute(
+        "SELECT message_id, title, lang FROM payment_messages WHERE user_id=?", (user_id,)
+    ).fetchone()
     conn.close()
-    return row[0] if row else None
+    return row  # (message_id, title, lang) or None
 
-def delete_active_order(user_id, item_id):
+def clear_payment_msg(user_id):
     conn = get_db()
-    conn.execute("DELETE FROM active_orders WHERE user_id=? AND item_id=?", (user_id, item_id))
+    conn.execute("DELETE FROM payment_messages WHERE user_id=?", (user_id,))
     conn.commit()
     conn.close()

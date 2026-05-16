@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
@@ -14,6 +18,14 @@ from keyboards import owner_keyboard
 from utils import get_lang, get_media_type, cancel_idle_timer, delete_user_status
 
 router = Router()
+
+OWNER_MENU = (
+    "<b>Команды владельца:</b>\n\n"
+    "/history — последние 20 сообщений\n"
+    "/clear — очистить БД\n"
+    "/banlist — забаненные\n"
+    "/shop — управление магазином"
+)
 
 
 class ReplyState(StatesGroup):

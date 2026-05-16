@@ -1,14 +1,22 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
+
+import asyncio
 
 import bot_instance
 from config import OWNER_ID
 from database import (
     get_user_lang, set_user_lang, set_user_active, is_banned,
     is_user_active, set_status_msg, save_message,
-    get_pending, set_pending, clear_pending
+    get_pending, set_pending, clear_pending,
+    save_bot_message, get_bot_messages, clear_bot_messages,
+    clear_status_msg
 )
 from texts import TEXTS
 from keyboards import lang_keyboard, owner_keyboard
@@ -20,6 +28,14 @@ router = Router()
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     if message.from_user.id == OWNER_ID:
+        await message.answer(
+            "<b>Команды владельца:</b>\n\n"
+            "/history — последние 20 сообщений\n"
+            "/clear — очистить БД\n"
+            "/banlist — забаненные\n"
+            "/shop — управление магазином",
+            parse_mode="HTML"
+        )
         return
 
     uid = message.from_user.id
@@ -34,8 +50,22 @@ async def cmd_start(message: Message):
 
     set_user_active(uid, True)
     reset_idle_timer(uid)
-    await message.answer(TEXTS[lang]["welcome"], parse_mode="HTML")
+    # Удаляем старые сообщения бота если есть
+    for mid in get_bot_messages(uid):
+        try:
+            await bot_instance.bot.delete_message(uid, mid)
+        except Exception:
+            pass
+    clear_bot_messages(uid)
+
+    m1 = await message.answer(TEXTS[lang]["welcome"], parse_mode="HTML")
+    save_bot_message(uid, m1.message_id)
+    await asyncio.sleep(0.4)
+    m2 = await message.answer(TEXTS[lang]["help"], parse_mode="HTML", reply_markup=lang_keyboard())
+    save_bot_message(uid, m2.message_id)
+    await asyncio.sleep(0.4)
     msg = await message.answer(TEXTS[lang]["sending"], parse_mode="HTML")
+    save_bot_message(uid, msg.message_id)
     set_status_msg(uid, msg.message_id)
 
 
@@ -43,11 +73,36 @@ async def cmd_start(message: Message):
 async def choose_language(callback: CallbackQuery):
     lang = callback.data.split("_")[1]
     uid = callback.from_user.id
+    bot = bot_instance.bot
+
+    # Удаляем все предыдущие сообщения бота
+    for mid in get_bot_messages(uid):
+        try:
+            await bot.delete_message(uid, mid)
+        except Exception:
+            pass
+    clear_bot_messages(uid)
+    clear_status_msg(uid)
+
+    # Удаляем сообщение с кнопками языка
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
     set_user_lang(uid, lang)
     set_user_active(uid, True)
     reset_idle_timer(uid)
-    await callback.message.edit_text(TEXTS[lang]["welcome"], parse_mode="HTML")
-    msg = await bot_instance.bot.send_message(uid, TEXTS[lang]["sending"], parse_mode="HTML")
+
+    await asyncio.sleep(0.3)
+    m1 = await bot.send_message(uid, TEXTS[lang]["welcome"], parse_mode="HTML")
+    save_bot_message(uid, m1.message_id)
+    await asyncio.sleep(0.4)
+    m2 = await bot.send_message(uid, TEXTS[lang]["help"], parse_mode="HTML", reply_markup=lang_keyboard())
+    save_bot_message(uid, m2.message_id)
+    await asyncio.sleep(0.4)
+    msg = await bot.send_message(uid, TEXTS[lang]["sending"], parse_mode="HTML")
+    save_bot_message(uid, msg.message_id)
     set_status_msg(uid, msg.message_id)
     await callback.answer()
 

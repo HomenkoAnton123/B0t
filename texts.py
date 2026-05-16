@@ -33,6 +33,7 @@ TEXTS = {
         "shop_empty":   "Магазин пока пуст.",
         "shop_title":   "<b>Магазин</b>\n\nВыбери товар:",
         "order_done":   "Заказ оформлен. Ожидай ответа владельца.",
+        "shop_hidden":  "Магазин временно недоступен.",
     },
     "uk": {
         "choose_lang": "Оберіть мову / Choose language / Выберите язык:",
@@ -66,6 +67,7 @@ TEXTS = {
         "shop_empty":   "Магазин поки порожній.",
         "shop_title":   "<b>Магазин</b>\n\nОбери товар:",
         "order_done":   "Замовлення оформлено. Очікуй відповіді власника.",
+        "shop_hidden":  "Магазин тимчасово недоступний.",
     },
     "en": {
         "choose_lang": "Choose language / Выберите язык / Оберіть мову:",
@@ -99,5 +101,6 @@ TEXTS = {
         "shop_empty":   "The shop is empty for now.",
         "shop_title":   "<b>Shop</b>\n\nChoose an item:",
         "order_done":   "Order placed. Wait for the owner's reply.",
+        "shop_hidden":  "The shop is temporarily unavailable.",
     },
 }

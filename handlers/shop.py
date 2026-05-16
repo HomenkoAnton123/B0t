@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
@@ -8,12 +12,14 @@ import bot_instance
 from config import OWNER_ID
 from database import (
     get_shop_items, get_shop_item, add_shop_item, delete_shop_item,
-    save_active_order, get_active_order_msg, delete_active_order # <-- Добавь эти три
+    is_shop_visible, set_shop_visible,
+    save_payment_msg, get_payment_msg, clear_payment_msg
 )
 from texts import TEXTS
 from keyboards import (
     shop_list_keyboard, shop_item_keyboard,
-    owner_shop_keyboard, order_keyboard, owner_keyboard
+    owner_shop_keyboard, order_keyboard, owner_keyboard,
+    payment_manage_keyboard
 )
 from utils import get_lang
 
@@ -35,10 +41,20 @@ async def cmd_shop(message: Message):
     uid = message.from_user.id
 
     if uid == OWNER_ID:
-        await message.answer("Управление магазином:", reply_markup=owner_shop_keyboard())
+        visible = is_shop_visible()
+        status  = "Магазин сейчас: <b>открыт</b>" if visible else "Магазин сейчас: <b>скрыт</b>"
+        await message.answer(
+            f"{status}\n\nУправление магазином:",
+            parse_mode="HTML",
+            reply_markup=owner_shop_keyboard(visible)
+        )
         return
 
-    lang  = get_lang(uid)
+    lang = get_lang(uid)
+    if not is_shop_visible():
+        await message.answer(TEXTS[lang]["shop_hidden"])
+        return
+
     items = get_shop_items()
     if not items:
         await message.answer(TEXTS[lang]["shop_empty"])
@@ -46,54 +62,50 @@ async def cmd_shop(message: Message):
     await message.answer(TEXTS[lang]["shop_title"], parse_mode="HTML", reply_markup=shop_list_keyboard(items))
 
 
-@router.callback_query(F.data.startswith("order_accept_"))
-async def shop_order_accept(callback: CallbackQuery):
+
+@router.callback_query(F.data == "shop_show")
+async def shop_show(callback: CallbackQuery):
     if callback.from_user.id != OWNER_ID:
         return
-    
-    data = callback.data.split("_")
-    user_id = int(data[2])
-    item_id = int(data[3])
-    
-    item = get_shop_item(item_id)
-    if not item:
-        await callback.answer("Товар не найден в базе.", show_alert=True)
-        return
-        
-    title = item[1]
-    # Берем реквизиты из базы данных (payment_info)
-    payment_info = item[4] if item[4] else "Реквизиты не указаны владельцем."
-    
-    # Текст, который изначально отправляется пользователю
-    user_text = (
-        f"<b> Ваш заказ на товар «{title}» принят!</b>\n\n"
-        f" Реквизиты для оплаты:\n<code>{payment_info}</code>"
+    set_shop_visible(True)
+    await callback.message.edit_text(
+        "Магазин сейчас: <b>открыт</b>\n\nУправление магазином:",
+        parse_mode="HTML",
+        reply_markup=owner_shop_keyboard(True)
     )
-    
-    try:
-        # Отправляем сообщение пользователю
-        user_msg = await bot_instance.bot.send_message(chat_id=user_id, text=user_text, parse_mode="HTML")
-        
-        # Сохраняем ID этого сообщения в базу данных
-        save_active_order(user_id, item_id, user_msg.message_id)
-        
-        # Обновляем инлайн-кнопки в твоем чате (добавляется кнопка скрыть карточку)
-        await callback.message.edit_reply_markup(reply_markup=order_keyboard(user_id, item_id, details_shown=True))
-        await callback.answer("Заказ принят, реквизиты отправлены пользователю.")
-    except Exception as e:
-        # 1. Выводим полную ошибку в консоль, чтобы ты мог её прочитать и починить
-        print(f"\n[КРИТИЧЕСКАЯ ОШИБКА ПРИ ПРИНЯТИИ ЗАКАЗА]: {e}\n")
-        
-        # 2. Обрезаем текст для всплывающего уведомления, чтобы Телеграм не ругался на длину
-        error_text = f"Ошибка: {e}"
-        if len(error_text) > 150:
-            error_text = error_text[:147] + "..."
-            
-        await callback.answer(error_text, show_alert=True)
+    await callback.answer("Магазин открыт.", show_alert=True)
+
+
+@router.callback_query(F.data == "shop_hide")
+async def shop_hide(callback: CallbackQuery):
+    if callback.from_user.id != OWNER_ID:
+        return
+    set_shop_visible(False)
+    await callback.message.edit_text(
+        "Магазин сейчас: <b>скрыт</b>\n\nУправление магазином:",
+        parse_mode="HTML",
+        reply_markup=owner_shop_keyboard(False)
+    )
+    await callback.answer("Магазин скрыт.", show_alert=True)
+
+
+@router.callback_query(F.data == "shopback")
+async def shop_back(callback: CallbackQuery):
+    uid   = callback.from_user.id
+    lang  = get_lang(uid)
+    items = get_shop_items()
+    if not items:
+        await callback.message.edit_text(TEXTS[lang]["shop_empty"])
+    else:
+        await callback.message.edit_text(
+            TEXTS[lang]["shop_title"], parse_mode="HTML",
+            reply_markup=shop_list_keyboard(items)
+        )
+    await callback.answer()
+
 
 @router.callback_query(F.data.startswith("shopitem_"))
 async def shop_item_view(callback: CallbackQuery):
-    
     uid     = callback.from_user.id
     lang    = get_lang(uid)
     item_id = int(callback.data.split("_")[1])
@@ -172,12 +184,131 @@ async def order_accept(callback: CallbackQuery):
         text += f"\n\n<b>{pay_label.get(lang, 'Payment details')}:</b>\n{payment_info}"
 
     try:
-        await bot_instance.bot.send_message(user_id, text, parse_mode="HTML")
+        sent = await bot_instance.bot.send_message(user_id, text, parse_mode="HTML")
+        # Сохраняем msg_id чтобы потом можно было скрыть реквизиты
+        save_payment_msg(user_id, sent.message_id, title, lang)
     except Exception:
         pass
 
-    await callback.message.edit_reply_markup(reply_markup=None)
+    # Убираем кнопки заказа, добавляем кнопку "Скрыть реквизиты"
+    await callback.message.edit_reply_markup(reply_markup=payment_manage_keyboard(user_id, item_id, payment_visible=True))
     await callback.answer("Заказ принят, реквизиты отправлены.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("revoke_pay_"))
+async def revoke_payment(callback: CallbackQuery):
+    if callback.from_user.id != OWNER_ID:
+        return
+    parts   = callback.data.split("_")
+    user_id = int(parts[2])
+    item_id = int(parts[3])
+    lang    = get_lang(user_id)
+
+    row = get_payment_msg(user_id)
+    if row:
+        msg_id, title, _ = row
+        revoked_texts = {
+            "ru": f"Заказ: <b>{title}</b>\n\n<i>Реквизиты скрыты.</i>",
+            "uk": f"Замовлення: <b>{title}</b>\n\n<i>Реквізити приховані.</i>",
+            "en": f"Order: <b>{title}</b>\n\n<i>Payment details are hidden.</i>",
+        }
+        try:
+            await bot_instance.bot.edit_message_text(
+                revoked_texts.get(lang, revoked_texts["ru"]),
+                chat_id=user_id,
+                message_id=msg_id,
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+    # Меняем кнопку на "Показать реквизиты"
+    await callback.message.edit_reply_markup(
+        reply_markup=payment_manage_keyboard(user_id, item_id, payment_visible=False)
+    )
+    await callback.answer("Реквизиты скрыты.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("show_pay_"))
+async def show_payment(callback: CallbackQuery):
+    if callback.from_user.id != OWNER_ID:
+        return
+    parts   = callback.data.split("_")
+    user_id = int(parts[2])
+    item_id = int(parts[3])
+    lang    = get_lang(user_id)
+    item    = get_shop_item(item_id)
+
+    if not item:
+        await callback.answer("Товар не найден.", show_alert=True)
+        return
+
+    payment_info = item[4] or ""
+    title        = item[1]
+
+    row = get_payment_msg(user_id)
+    if row:
+        msg_id, _, _ = row
+        accept_texts = {
+            "ru": f"Заказ принят.\n\nТовар: <b>{title}</b>",
+            "uk": f"Замовлення прийнято.\n\nТовар: <b>{title}</b>",
+            "en": f"Order accepted.\n\nItem: <b>{title}</b>",
+        }
+        text = accept_texts.get(lang, accept_texts["ru"])
+        if payment_info:
+            pay_label = {"ru": "Реквизиты для оплаты", "uk": "Реквізити для оплати", "en": "Payment details"}
+            text += f"\n\n<b>{pay_label.get(lang, 'Payment details')}:</b>\n{payment_info}"
+        try:
+            await bot_instance.bot.edit_message_text(
+                text,
+                chat_id=user_id,
+                message_id=msg_id,
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
+    await callback.message.edit_reply_markup(
+        reply_markup=payment_manage_keyboard(user_id, item_id, payment_visible=True)
+    )
+    await callback.answer("Реквизиты показаны.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("delete_order_"))
+async def delete_order(callback: CallbackQuery):
+    if callback.from_user.id != OWNER_ID:
+        return
+    parts   = callback.data.split("_")
+    user_id = int(parts[2])
+    item_id = int(parts[3])
+    lang    = get_lang(user_id)
+
+    # Удаляем сообщение с реквизитами у юзера
+    row = get_payment_msg(user_id)
+    if row:
+        msg_id, title, _ = row
+        deleted_texts = {
+            "ru": f"Заказ: <b>{title}</b>\n\n<i>Заказ был удалён владельцем.</i>",
+            "uk": f"Замовлення: <b>{title}</b>\n\n<i>Замовлення було видалено власником.</i>",
+            "en": f"Order: <b>{title}</b>\n\n<i>The order has been deleted by the owner.</i>",
+        }
+        try:
+            await bot_instance.bot.edit_message_text(
+                deleted_texts.get(lang, deleted_texts["ru"]),
+                chat_id=user_id,
+                message_id=msg_id,
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+        clear_payment_msg(user_id)
+
+    # Удаляем само сообщение заказа у владельца
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.answer("Заказ удалён.", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("order_decline_"))
@@ -197,67 +328,11 @@ async def order_decline(callback: CallbackQuery):
         await bot_instance.bot.send_message(user_id, decline_texts.get(lang, "Order declined."))
     except Exception:
         pass
-    
+
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer("Заказ отменён.", show_alert=True)
 
 
-@router.callback_query(F.data.startswith("order_toggle_"))
-async def shop_order_toggle(callback: CallbackQuery):
-    if callback.from_user.id != OWNER_ID:
-        return
-        
-    data = callback.data.split("_")
-    user_id = int(data[2])
-    item_id = int(data[3])
-    next_status = int(data[4]) # 1 = показать карточку, 0 = скрыть карточку
-    
-    # Пытаемся найти ID сообщения, которое видит пользователь
-    user_msg_id = get_active_order_msg(user_id, item_id)
-    if not user_msg_id:
-        await callback.answer("Сообщение у пользователя не найдено (возможно, заказ устарел).", show_alert=True)
-        return
-        
-    item = get_shop_item(item_id)
-    if not item:
-        await callback.answer("Товар не найден.", show_alert=True)
-        return
-        
-    title = item[1]
-    payment_info = item[4] if item[4] else "Реквизиты не указаны"
-    
-    # Меняем текст сообщения пользователя в зависимости от нажатой кнопки
-    if next_status == 1:
-        new_text = (
-            f"<b>Ваш заказ на товар «{title}» принят!</b>\n\n"
-            f"Реквизиты для оплаты:\n<code>{payment_info}</code>"
-        )
-        is_shown = True
-    else:
-        new_text = (
-            f"<b>Ваш заказ на товар «{title}» принят!</b>\n\n"
-            f"<i>Владелец временно скрыл реквизиты. Ожидайте обновления информации.</i>"
-        )
-        is_shown = False
-        
-    try:
-        # Редактируем сообщение прямо в чате у пользователя!
-        await bot_instance.bot.edit_message_text(
-            chat_id=user_id,
-            message_id=user_msg_id,
-            text=new_text,
-            parse_mode="HTML"
-        )
-        
-        # Меняем кнопку у тебя (админа) на противоположную
-        await callback.message.edit_reply_markup(reply_markup=order_keyboard(user_id, item_id, details_shown=is_shown))
-        
-        status_word = "показаны" if is_shown else "скрыты"
-        await callback.answer(f"Реквизиты {status_word} у юзера!")
-    except Exception as e:
-        await callback.answer(f"Ошибка изменения сообщения: {e}", show_alert=True)
-
-    
 # ── Владелец — управление товарами ────────────────────
 
 @router.callback_query(F.data == "shop_add")
