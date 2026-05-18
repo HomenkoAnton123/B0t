@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TaskFlow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Unbounded:wght@300;400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow g1"></div>
+<div class="bg-glow g2"></div>
+
+<header>
+  <div class="logo">
+    <span class="logo-icon">◈</span>
+    <span class="logo-text">TASKFLOW</span>
+  </div>
+  <div class="header-stats">
+    <div class="stat">
+      <span class="stat-num">{{ tasks_active|length }}</span>
+      <span class="stat-label">АКТИВНЫХ</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-num">{{ tasks_done|length }}</span>
+      <span class="stat-label">ГОТОВО</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- CREATE PANEL -->
+  <section class="create-panel">
+    <div class="panel-header">
+      <span class="panel-tag">NEW_TASK</span>
+      <h2>Создать задачу</h2>
+    </div>
+    <form action="/task/create" method="post" class="create-form">
+      <div class="form-row">
+        <div class="field field-wide">
+          <label>НАЗВАНИЕ</label>
+          <input type="text" name="title" placeholder="Что нужно сделать..." required autocomplete="off">
+        </div>
+        <div class="field">
+          <label>ПРИОРИТЕТ</label>
+          <select name="priority">
+            <option value="low">Низкий</option>
+            <option value="normal" selected>Средний</option>
+            <option value="high">Высокий</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>ОПИСАНИЕ</label>
+        <textarea name="description" placeholder="Детали задачи..." rows="2"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>ДЕДЛАЙН</label>
+          <input type="datetime-local" name="deadline">
+        </div>
+        <div class="field">
+          <label>НАПОМНИТЬ ЗА</label>
+          <select name="remind_minutes">
+            <option value="0">Без напоминания</option>
+            <option value="10">10 минут</option>
+            <option value="30">30 минут</option>
+            <option value="60">1 час</option>
+            <option value="120">2 часа</option>
+            <option value="360">6 часов</option>
+            <option value="1440">1 день</option>
+            <option value="4320">3 дня</option>
+          </select>
+        </div>
+        <div class="field field-btn">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn-create">
+            <span>+</span> ДОБАВИТЬ
+          </button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <!-- ACTIVE TASKS -->
+  <section class="tasks-section">
+    <div class="section-header">
+      <span class="section-tag">ACTIVE</span>
+      <span class="section-count">{{ tasks_active|length }}</span>
+    </div>
+
+    {% if tasks_active %}
+    <div class="tasks-grid">
+      {% for task in tasks_active %}
+      <div class="task-card priority-{{ task.priority }}" data-id="{{ task.id }}">
+        <div class="task-card-top">
+          <div class="priority-dot"></div>
+          <span class="priority-label">{{ {'low':'LOW','normal':'MED','high':'HIGH'}[task.priority] }}</span>
+          {% if task.deadline %}
+          <span class="deadline-badge">
+            <span class="deadline-icon">⏱</span>
+            {{ task.deadline | replace('T',' ') | truncate(16, true, '') }}
+          </span>
+          {% endif %}
+          {% if task.remind_minutes > 0 %}
+          <span class="remind-badge" title="Напоминание за {{ task.remind_minutes }} мин">
+            🔔
+            {% if task.remind_sent %}<span class="sent-mark">✓</span>{% endif %}
+          </span>
+          {% endif %}
+        </div>
+
+        <h3 class="task-title">{{ task.title }}</h3>
+        {% if task.description %}
+        <p class="task-desc">{{ task.description }}</p>
+        {% endif %}
+        <div class="task-meta">
+          <span class="task-date">{{ task.created_at }}</span>
+        </div>
+
+        <div class="task-actions">
+          <button class="btn-done" onclick="completeTask({{ task.id }}, this)" title="Выполнено">
+            ✓ DONE
+          </button>
+          <a class="btn-edit" href="/task/{{ task.id }}/edit" title="Редактировать">
+            ✎ EDIT
+          </a>
+          {% if task.remind_sent %}
+          <button class="btn-reset" onclick="resetReminder({{ task.id }}, this)" title="Сбросить напоминание">
+            ↺ REMIND
+          </button>
+          {% endif %}
+          <button class="btn-del" onclick="deleteTask({{ task.id }}, this)" title="Удалить">
+            ✕
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <span class="empty-icon">◇</span>
+      <p>Нет активных задач</p>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- DONE TASKS -->
+  {% if tasks_done %}
+  <section class="tasks-section done-section">
+    <div class="section-header">
+      <span class="section-tag done-tag">COMPLETED</span>
+      <span class="section-count">{{ tasks_done|length }}</span>
+      <button class="toggle-done" onclick="toggleDone(this)">▾ ПОКАЗАТЬ</button>
+    </div>
+    <div class="tasks-grid done-grid hidden">
+      {% for task in tasks_done %}
+      <div class="task-card task-done" data-id="{{ task.id }}">
+        <h3 class="task-title">{{ task.title }}</h3>
+        {% if task.description %}
+        <p class="task-desc">{{ task.description }}</p>
+        {% endif %}
+        <div class="task-actions">
+          <button class="btn-del" onclick="deleteTask({{ task.id }}, this)">✕ УДАЛИТЬ</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

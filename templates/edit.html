@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Редактировать — TaskFlow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Unbounded:wght@300;400;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow g1"></div>
+<div class="bg-glow g2"></div>
+
+<header>
+  <div class="logo">
+    <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:10px;">
+      <span class="logo-icon">◈</span>
+      <span class="logo-text">TASKFLOW</span>
+    </a>
+  </div>
+  <div class="header-stats">
+    <span style="font-family:'Space Mono',monospace;color:var(--muted);font-size:12px;">EDIT_MODE</span>
+  </div>
+</header>
+
+<main>
+  <section class="create-panel edit-panel">
+    <div class="panel-header">
+      <span class="panel-tag">EDIT_TASK #{{ task.id }}</span>
+      <h2>Редактировать задачу</h2>
+    </div>
+    <form action="/task/{{ task.id }}/edit" method="post" class="create-form">
+      <div class="form-row">
+        <div class="field field-wide">
+          <label>НАЗВАНИЕ</label>
+          <input type="text" name="title" value="{{ task.title }}" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label>ПРИОРИТЕТ</label>
+          <select name="priority">
+            <option value="low"    {% if task.priority=='low'    %}selected{% endif %}>Низкий</option>
+            <option value="normal" {% if task.priority=='normal' %}selected{% endif %}>Средний</option>
+            <option value="high"   {% if task.priority=='high'   %}selected{% endif %}>Высокий</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>ОПИСАНИЕ</label>
+        <textarea name="description" rows="3">{{ task.description or '' }}</textarea>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>ДЕДЛАЙН</label>
+          <input type="datetime-local" name="deadline"
+            value="{{ task.deadline or '' }}">
+        </div>
+        <div class="field">
+          <label>НАПОМНИТЬ ЗА</label>
+          <select name="remind_minutes">
+            {% set rm = task.remind_minutes %}
+            <option value="0"    {% if rm==0    %}selected{% endif %}>Без напоминания</option>
+            <option value="10"   {% if rm==10   %}selected{% endif %}>10 минут</option>
+            <option value="30"   {% if rm==30   %}selected{% endif %}>30 минут</option>
+            <option value="60"   {% if rm==60   %}selected{% endif %}>1 час</option>
+            <option value="120"  {% if rm==120  %}selected{% endif %}>2 часа</option>
+            <option value="360"  {% if rm==360  %}selected{% endif %}>6 часов</option>
+            <option value="1440" {% if rm==1440 %}selected{% endif %}>1 день</option>
+            <option value="4320" {% if rm==4320 %}selected{% endif %}>3 дня</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row edit-btns">
+        <button type="submit" class="btn-create">✓ СОХРАНИТЬ</button>
+        <a href="/" class="btn-cancel">✕ ОТМЕНА</a>
+      </div>
+    </form>
+  </section>
+</main>
+
+</body>
+</html>
